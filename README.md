@@ -1,5 +1,7 @@
 # ruby_llm-instructor
 
+[![CI](https://github.com/washu/ruby_llm-instructor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/washu/ruby_llm-instructor/actions/workflows/ci.yml)
+
 Structured, validated outputs from LLMs for Ruby. Define a Ruby class, hand it to
 `RubyLLM::Instructor::Client`, and get back a fully-hydrated, validated instance —
 with automatic retries on validation failure.
