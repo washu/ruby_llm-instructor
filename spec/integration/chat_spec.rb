@@ -38,29 +38,6 @@ class ArticleContract < Dry::Validation::Contract
   end
 end
 
-class Product
-  include ActiveModel::Model
-  include ActiveModel::Attributes
-
-  attribute :sku, :string
-
-  validates :sku,
-            format: {
-              with: /\Asku_[a-z]+_\d{4}\z/,
-              message: "must look like sku_brandname_1234 (lowercase, underscores)"
-            }
-end
-
-class SupportTicket
-  include ActiveModel::Model
-  include ActiveModel::Attributes
-
-  attribute :priority, :string
-
-  validates :priority,
-            inclusion: { in: %w[P0 P1 P2 P3], message: "must be one of P0, P1, P2, P3" }
-end
-
 RSpec.describe RubyLLM::Instructor::Client, :integration do
   before(:all) do
     RubyLLM.configure do |c|
@@ -156,50 +133,6 @@ RSpec.describe RubyLLM::Instructor::Client, :integration do
 
       expect(result).to be_a(Lead)
       expect(result).to be_valid
-    end
-  end
-
-  describe "retry feedback loop (first attempt is expected to fail validation)" do
-    it "maps a free-text urgency to an allowed enum value after the first attempt fails inclusion" do
-      chat_calls = 0
-      allow(RubyLLM).to receive(:chat).and_wrap_original do |original, **kwargs|
-        chat_calls += 1
-        original.call(**kwargs)
-      end
-
-      result = client.chat(
-        model: MODEL,
-        response_model: SupportTicket,
-        prompt: "Customer says: 'My production site is completely down and we are losing " \
-                "thousands of dollars per minute, this is the most urgent thing imaginable.' " \
-                "Please assign a priority.",
-        max_retries: 4
-      )
-
-      expect(result).to be_a(SupportTicket)
-      expect(result).to be_valid
-      expect(%w[P0 P1 P2 P3]).to include(result.priority)
-      expect(chat_calls).to be > 1
-    end
-
-    it "reformats a SKU after the first attempt fails the strict format" do
-      chat_calls = 0
-      allow(RubyLLM).to receive(:chat).and_wrap_original do |original, **kwargs|
-        chat_calls += 1
-        original.call(**kwargs)
-      end
-
-      result = client.chat(
-        model: MODEL,
-        response_model: Product,
-        prompt: "The product SKU printed on the invoice is ACME-1234.",
-        max_retries: 4
-      )
-
-      expect(result).to be_a(Product)
-      expect(result).to be_valid
-      expect(result.sku).to match(/\Asku_[a-z]+_\d{4}\z/)
-      expect(chat_calls).to be > 1
     end
   end
 

@@ -17,6 +17,29 @@ class PersonActiveModel
   validates :email, format: { with: /\A[^@\s]+@[^@\s]+\z/, message: "must include @" }
 end
 
+# ActiveModel with inclusion (enum) validation
+class SupportTicketModel
+  include ActiveModel::Model
+  include ActiveModel::Attributes
+
+  attribute :priority, :string
+  validates :priority,
+            inclusion: { in: %w[P0 P1 P2 P3], message: "must be one of P0, P1, P2, P3" }
+end
+
+# ActiveModel with strict format validation
+class ProductModel
+  include ActiveModel::Model
+  include ActiveModel::Attributes
+
+  attribute :sku, :string
+  validates :sku,
+            format: {
+              with: /\Asku_[a-z]+_\d{4}\z/,
+              message: "must look like sku_brandname_1234 (lowercase, underscores)"
+            }
+end
+
 # Immutable value object (Ruby 3.2+)
 PersonData = Data.define(:name, :email)
 
@@ -120,6 +143,34 @@ RSpec.describe RubyLLM::Instructor::Client do
         result = client.chat(model: "gpt-4o", response_model: PersonActiveModel, prompt: "Extract person", max_retries: 2)
 
         expect(result.email).to eq("sal@example.com")
+      end
+    end
+
+    context "with ActiveModel inclusion (enum) validation" do
+      it "feeds the inclusion error back to the LLM and recovers with an allowed value" do
+        bad  = stub_response({ priority: "URGENT" })
+        good = stub_response({ priority: "P0" })
+
+        expect(mock_session).to receive(:ask).with("Assign priority").and_return(bad)
+        expect(mock_session).to receive(:ask).with(/failed local validation rules.*must be one of P0/).and_return(good)
+
+        result = client.chat(model: "gpt-4o", response_model: SupportTicketModel, prompt: "Assign priority", max_retries: 2)
+
+        expect(result.priority).to eq("P0")
+      end
+    end
+
+    context "with ActiveModel strict format validation (e.g. SKU)" do
+      it "feeds the format error back to the LLM and recovers with a reformatted value" do
+        bad  = stub_response({ sku: "ACME-1234" })
+        good = stub_response({ sku: "sku_acme_1234" })
+
+        expect(mock_session).to receive(:ask).with("Extract sku").and_return(bad)
+        expect(mock_session).to receive(:ask).with(/failed local validation rules.*sku_brandname_1234/).and_return(good)
+
+        result = client.chat(model: "gpt-4o", response_model: ProductModel, prompt: "Extract sku", max_retries: 2)
+
+        expect(result.sku).to eq("sku_acme_1234")
       end
     end
 
