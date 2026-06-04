@@ -1,0 +1,3 @@
+module Instructor
+  VERSION: String
+end
