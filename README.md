@@ -189,8 +189,14 @@ person.frozen? # => true
 
 ### Struct
 
+Both `keyword_init: true` and positional structs are supported:
+
 ```ruby
+# keyword_init (recommended)
 Address = Struct.new(:street, :city, :zip, keyword_init: true)
+
+# positional — also works
+Point = Struct.new(:x, :y)
 
 address = instructor.chat(
   model: "gpt-4o",
@@ -246,6 +252,7 @@ instructor.chat(
 By default `ruby_llm-instructor` uses `mode: :schema` — structured output via the
 provider's native JSON schema constraint. Pass `mode: :tools` to use function
 calling instead, which works with older models that pre-date structured output.
+Passing any other value raises `ArgumentError` immediately.
 
 ```ruby
 # Default — structured output (recommended for modern models)
@@ -258,9 +265,8 @@ instructor.chat(model: "gpt-3.5-turbo", response_model: MyModel, prompt: "...", 
 ## Auto-retry on validation failure
 
 When the LLM returns data that fails `valid?`, `ruby_llm-instructor` feeds the
-error messages back to the model and asks for a corrected response — up to
-`max_retries` times (default: 3). If all retries are exhausted, a `RuntimeError`
-is raised.
+error messages back to the model — along with the original task — and asks for a
+corrected response. This repeats up to `max_retries` times (default: 3).
 
 ```ruby
 instructor.chat(
@@ -269,6 +275,18 @@ instructor.chat(
   prompt: "...",
   max_retries: 5
 )
+```
+
+If all retries are exhausted a `RubyLLM::Instructor::ValidationError` is raised
+(a `StandardError` subclass), carrying the final validation message:
+
+```ruby
+begin
+  instructor.chat(model: "gpt-4o", response_model: LeadCapture, prompt: "...")
+rescue RubyLLM::Instructor::ValidationError => e
+  # e.message => "ruby_llm-instructor failed validation after 3 attempts. Errors: ..."
+  Rails.logger.warn("LLM extraction failed: #{e.message}")
+end
 ```
 
 ## One model, any provider
@@ -286,13 +304,15 @@ instructor.chat(model: "claude-3-5-sonnet", ...)
 instructor.chat(model: "llama3", ...)
 ```
 
-## What's in v0.1
+## What's in v0.2
 
 - All `ruby_llm`-supported providers (OpenAI, Anthropic, Gemini, Ollama, …)
-- Response models: PORO, ActiveModel, native dry-validation contract, duck-typed dry-v bridge, `Data.define`, `Struct`, custom `to_json_schema`
+- Response models: PORO, ActiveModel, native dry-validation contract, duck-typed dry-v bridge, `Data.define`, `Struct` (keyword and positional), custom `to_json_schema`
 - Type inference from `ActiveModel::Attributes` (integer, number, boolean)
 - Required vs. optional fields from presence validators
-- Automatic retry-on-validation-failure with corrective prompt
+- Automatic retry-on-validation-failure with corrective prompt (original task preserved on each retry)
+- `RubyLLM::Instructor::ValidationError` raised on exhaustion — rescueable by type
+- `mode:` validation — `ArgumentError` on unknown values
 - Streaming via `stream:` proc
 - Function-calling fallback via `mode: :tools`
 

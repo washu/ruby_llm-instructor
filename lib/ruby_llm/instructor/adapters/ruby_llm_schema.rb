@@ -54,11 +54,7 @@ module RubyLLM
         end
 
         def dry_contract?
-          defined?(Dry::Validation::Contract) &&
-            @klass.is_a?(Class) &&
-            @klass < Dry::Validation::Contract
-        rescue TypeError
-          false
+          Utils.dry_contract?(@klass)
         end
 
         def build_dry_contract_schema

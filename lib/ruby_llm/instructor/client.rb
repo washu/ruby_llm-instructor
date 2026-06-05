@@ -3,7 +3,13 @@
 module RubyLLM
   module Instructor
     class Client
+      VALID_MODES = %i[schema tools].freeze
+
       def chat(model:, response_model:, prompt:, max_retries: 3, stream: nil, mode: :schema)
+        unless VALID_MODES.include?(mode)
+          raise ArgumentError, "Unknown mode #{mode.inspect}. Valid modes are: #{VALID_MODES.join(', ')}"
+        end
+
         compiled_schema = Adapters::RubyLlmSchemaAdapter.new(response_model).build_schema
         current_prompt = prompt
         retries = 0
@@ -28,10 +34,12 @@ module RubyLLM
         rescue ValidationError => e
           if retries < max_retries
             retries += 1
-            current_prompt = "Your structural response failed local validation rules: #{e.message}. Please fix the data matching the schema parameters perfectly."
+            current_prompt = "Original task: #{prompt}\n\n" \
+                             "Your previous response failed validation: #{e.message}. " \
+                             "Please fix the data to match the schema exactly."
             retry
           else
-            raise "ruby_llm-instructor failed validation after #{max_retries} attempts. Errors: #{e.message}"
+            raise ValidationError, "ruby_llm-instructor failed validation after #{max_retries} attempts. Errors: #{e.message}"
           end
         end
       end
@@ -58,11 +66,7 @@ module RubyLLM
       end
 
       def dry_contract?(klass)
-        defined?(Dry::Validation::Contract) &&
-          klass.is_a?(Class) &&
-          klass < Dry::Validation::Contract
-      rescue TypeError
-        false
+        Utils.dry_contract?(klass)
       end
 
       def validate_payload(response_model, parsed_data)
@@ -91,7 +95,13 @@ module RubyLLM
         end
 
         if response_model.respond_to?(:members)
-          response_model.new(**parsed_data.transform_keys(&:to_sym))
+          kwargs = parsed_data.transform_keys(&:to_sym)
+          begin
+            response_model.new(**kwargs)
+          rescue ArgumentError
+            # Positional Struct (no keyword_init:true) — fall back to positional args
+            response_model.new(*response_model.members.map { |m| kwargs[m] })
+          end
         else
           instance = response_model.new
           parsed_data.each do |key, value|

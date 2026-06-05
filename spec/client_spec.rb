@@ -138,7 +138,7 @@ RSpec.describe RubyLLM::Instructor::Client do
         good = stub_response({ name: "Sal", email: "sal@example.com" })
 
         expect(mock_session).to receive(:ask).with("Extract person").and_return(bad)
-        expect(mock_session).to receive(:ask).with(/failed local validation rules.*must include @/).and_return(good)
+        expect(mock_session).to receive(:ask).with(/Your previous response failed validation.*must include @/).and_return(good)
 
         result = client.chat(model: "gpt-4o", response_model: PersonActiveModel, prompt: "Extract person", max_retries: 2)
 
@@ -152,7 +152,7 @@ RSpec.describe RubyLLM::Instructor::Client do
         good = stub_response({ priority: "P0" })
 
         expect(mock_session).to receive(:ask).with("Assign priority").and_return(bad)
-        expect(mock_session).to receive(:ask).with(/failed local validation rules.*must be one of P0/).and_return(good)
+        expect(mock_session).to receive(:ask).with(/Your previous response failed validation.*must be one of P0/).and_return(good)
 
         result = client.chat(model: "gpt-4o", response_model: SupportTicketModel, prompt: "Assign priority", max_retries: 2)
 
@@ -166,7 +166,7 @@ RSpec.describe RubyLLM::Instructor::Client do
         good = stub_response({ sku: "sku_acme_1234" })
 
         expect(mock_session).to receive(:ask).with("Extract sku").and_return(bad)
-        expect(mock_session).to receive(:ask).with(/failed local validation rules.*sku_brandname_1234/).and_return(good)
+        expect(mock_session).to receive(:ask).with(/Your previous response failed validation.*sku_brandname_1234/).and_return(good)
 
         result = client.chat(model: "gpt-4o", response_model: ProductModel, prompt: "Extract sku", max_retries: 2)
 
@@ -224,7 +224,7 @@ RSpec.describe RubyLLM::Instructor::Client do
         good = stub_response({ name: "Sal", email: "sal@example.com" })
 
         expect(mock_session).to receive(:ask).with("Extract person").and_return(bad)
-        expect(mock_session).to receive(:ask).with(/failed local validation rules.*email must include @/).and_return(good)
+        expect(mock_session).to receive(:ask).with(/Your previous response failed validation.*email must include @/).and_return(good)
 
         result = client.chat(model: "gpt-4o", response_model: PersonDry, prompt: "Extract person", max_retries: 2)
 
@@ -236,7 +236,7 @@ RSpec.describe RubyLLM::Instructor::Client do
 
         expect {
           client.chat(model: "gpt-4o", response_model: PersonDry, prompt: "test", max_retries: 1)
-        }.to raise_error(RuntimeError, /failed validation after 1 attempts/)
+        }.to raise_error(RubyLLM::Instructor::ValidationError, /failed validation after 1 attempts/)
       end
     end
 
@@ -254,7 +254,7 @@ RSpec.describe RubyLLM::Instructor::Client do
 
         expect {
           client.chat(model: "gpt-4o", response_model: always_invalid_model, prompt: "test", max_retries: 0)
-        }.to raise_error(RuntimeError, /failed validation after 0 attempts/)
+        }.to raise_error(RubyLLM::Instructor::ValidationError, /failed validation after 0 attempts/)
       end
     end
 
@@ -272,7 +272,7 @@ RSpec.describe RubyLLM::Instructor::Client do
 
         expect {
           client.chat(model: "gpt-4o", response_model: partial_errors_model, prompt: "test", max_retries: 0)
-        }.to raise_error(RuntimeError, /Validation failed/)
+        }.to raise_error(RubyLLM::Instructor::ValidationError, /Validation failed/)
       end
     end
 
@@ -288,7 +288,7 @@ RSpec.describe RubyLLM::Instructor::Client do
         allow(mock_session).to receive(:ask).and_return(stub_response({ name: "x" }))
         expect {
           client.chat(model: "gpt-4o", response_model: bare_invalid_model, prompt: "test", max_retries: 1)
-        }.to raise_error(RuntimeError, /Validation failed/)
+        }.to raise_error(RubyLLM::Instructor::ValidationError, /Validation failed/)
       end
     end
 
@@ -318,7 +318,7 @@ RSpec.describe RubyLLM::Instructor::Client do
         good = stub_response({ name: "Sal", email: "sal@example.com" })
 
         expect(mock_session).to receive(:ask).with("Extract contract").and_return(bad)
-        expect(mock_session).to receive(:ask).with(/failed local validation rules.*email must include @/).and_return(good)
+        expect(mock_session).to receive(:ask).with(/Your previous response failed validation.*email must include @/).and_return(good)
 
         result = client.chat(model: "gpt-4o", response_model: contract_klass, prompt: "Extract contract", max_retries: 2)
 
@@ -330,7 +330,7 @@ RSpec.describe RubyLLM::Instructor::Client do
 
         expect {
           client.chat(model: "gpt-4o", response_model: contract_klass, prompt: "test", max_retries: 1)
-        }.to raise_error(RuntimeError, /failed validation after 1 attempts/)
+        }.to raise_error(RubyLLM::Instructor::ValidationError, /failed validation after 1 attempts/)
       end
 
       it "hydrates with string-keyed responses" do
@@ -367,8 +367,29 @@ RSpec.describe RubyLLM::Instructor::Client do
       end
     end
 
-    context "with mode: :tools" do
-      before do
+    context "with an invalid mode" do
+      it "raises ArgumentError immediately" do
+        expect {
+          client.chat(model: "gpt-4o", response_model: PersonPoro, prompt: "test", mode: :json)
+        }.to raise_error(ArgumentError, /Unknown mode :json/)
+      end
+    end
+
+    context "with a positional Struct (no keyword_init)" do
+      let(:pos_struct) { Struct.new(:name, :email) }
+
+      it "hydrates using positional args" do
+        allow(mock_session).to receive(:ask).and_return(stub_response({ name: "Sal", email: "sal@example.com" }))
+
+        result = client.chat(model: "gpt-4o", response_model: pos_struct, prompt: "test")
+
+        expect(result).to be_a(pos_struct)
+        expect(result.name).to eq("Sal")
+        expect(result.email).to eq("sal@example.com")
+      end
+    end
+
+    context "with mode: :tools" do      before do
         allow(RubyLLM).to receive(:chat).with(model: "gpt-4o").and_return(mock_session)
         allow(mock_session).to receive(:with_tool).and_return(mock_session)
         allow(mock_session).to receive(:with_schema).and_return(mock_session)
@@ -415,7 +436,7 @@ RSpec.describe RubyLLM::Instructor::Client do
 
         expect {
           client.chat(model: "gpt-4o", response_model: always_invalid_model, prompt: "test", max_retries: 1)
-        }.to raise_error(RuntimeError, /failed validation after 1 attempts/)
+        }.to raise_error(RubyLLM::Instructor::ValidationError, /failed validation after 1 attempts/)
       end
     end
 
@@ -437,7 +458,7 @@ RSpec.describe RubyLLM::Instructor::Client do
 
         expect {
           client.chat(model: "gpt-4o", response_model: PersonPoro, prompt: "test", max_retries: 1)
-        }.to raise_error(RuntimeError, /Expected a structured JSON object/)
+        }.to raise_error(RubyLLM::Instructor::ValidationError, /Expected a structured JSON object/)
       end
     end
   end

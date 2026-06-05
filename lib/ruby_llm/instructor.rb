@@ -1,7 +1,10 @@
+# frozen_string_literal: true
+
 require "ruby_llm"
 require "ruby_llm/schema"
 require "active_model"
 require_relative "instructor/version"
+require_relative "instructor/utils"
 require_relative "instructor/adapters/ruby_llm_schema"
 require_relative "instructor/client"
 
